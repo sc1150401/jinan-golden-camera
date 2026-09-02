@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Download, RefreshCw, Share2, Sparkles, SwitchCamera, Video as VideoIcon } from "lucide-react";
+import { Camera, Download, RefreshCw, Sparkles, SwitchCamera, Video as VideoIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Result = { url: string; blob: Blob; kind: "photo" | "video" } | null;
@@ -32,7 +32,6 @@ export default function Home() {
   const [recording, setRecording] = useState(false);
   const [recordProgress, setRecordProgress] = useState(0);
   const [result, setResult] = useState<Result>(null);
-  const [shareHint, setShareHint] = useState("");
 
   useEffect(() => { resultRef.current = result; }, [result]);
 
@@ -181,30 +180,9 @@ export default function Home() {
   const retake = () => {
     if (result) URL.revokeObjectURL(result.url);
     setResult(null);
-    setShareHint("");
   };
   const extension = result?.blob.type.includes("mp4") ? "mp4" : "webm";
   const filename = result?.kind === "photo" ? "2026金安獎_交通之光.png" : `2026金安獎_交通之光.${extension}`;
-
-  const shareResult = async (target: "instagram" | "line") => {
-    if (!result) return;
-    const file = new File([result.blob], filename, { type: result.blob.type });
-    const targetName = target === "instagram" ? "Instagram 限時動態" : "LINE";
-    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
-      setShareHint(`請在分享選單中選擇 ${targetName}`);
-      try {
-        await navigator.share({
-          files: [file],
-          title: "2026 金安獎｜金安無限・交通之光",
-          text: target === "line" ? "2026 金安獎｜金安無限・交通之光" : undefined,
-        });
-        return;
-      }
-      catch (shareError) { if ((shareError as DOMException).name === "AbortError") return; }
-    }
-    const anchor = document.createElement("a"); anchor.href = result.url; anchor.download = filename; anchor.click();
-    setShareHint(`檔案已下載，請開啟 ${targetName} 後上傳`);
-  };
 
   return (
     <main className="camera-app">
@@ -233,19 +211,8 @@ export default function Home() {
             <span className="control-spacer" aria-hidden="true" />
           </>}
           {result && <>
-            <div className="result-actions">
-              <button className="platform-button instagram-button" onClick={() => shareResult("instagram")}>
-                <span className="platform-mark">IG</span>
-                <span>傳到 IG 限動</span>
-              </button>
-              <button className="platform-button line-button" onClick={() => shareResult("line")}>
-                <span className="platform-mark">LINE</span>
-                <span>傳到 LINE</span>
-              </button>
-              <button className="secondary-action" onClick={retake}><RefreshCw size={19} />重拍</button>
-              <a className="secondary-action" href={result.url} download={filename}><Download size={19} />下載</a>
-              {shareHint && <p className="share-hint"><Share2 size={15} />{shareHint}</p>}
-            </div>
+            <button className="secondary-action" onClick={retake}><RefreshCw size={19} />重拍</button>
+            <a className="secondary-action" href={result.url} download={filename}><Download size={19} />下載</a>
           </>}
         </footer>
       </section>
