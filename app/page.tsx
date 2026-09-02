@@ -16,6 +16,20 @@ function drawCover(ctx: CanvasRenderingContext2D, source: CanvasImageSource, sw:
   ctx.drawImage(source, (W - dw) / 2, (H - dh) / 2, dw, dh);
 }
 
+function drawCameraFit(ctx: CanvasRenderingContext2D, source: CanvasImageSource, sw: number, sh: number) {
+  ctx.fillStyle = "#0a1830";
+  ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  ctx.filter = "blur(42px) brightness(.58)";
+  ctx.globalAlpha = .72;
+  drawCover(ctx, source, sw, sh);
+  ctx.restore();
+  const scale = Math.min(W / sw, H / sh);
+  const dw = sw * scale;
+  const dh = sh * scale;
+  ctx.drawImage(source, (W - dw) / 2, (H - dh) / 2, dw, dh);
+}
+
 function drawCoverInRect(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, w: number, h: number) {
   const scale = Math.max(w / image.naturalWidth, h / image.naturalHeight);
   const dw = image.naturalWidth * scale;
@@ -90,7 +104,7 @@ export default function Home() {
     if (video && video.readyState >= 2 && video.videoWidth) {
       ctx.save();
       if (facing === "user") { ctx.translate(W, 0); ctx.scale(-1, 1); }
-      drawCover(ctx, video, video.videoWidth, video.videoHeight);
+      drawCameraFit(ctx, video, video.videoWidth, video.videoHeight);
       ctx.restore();
     } else {
       const bg = ctx.createLinearGradient(0, 0, W, H);
@@ -156,7 +170,7 @@ export default function Home() {
     try {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: mode }, width: { ideal: 1080 }, height: { ideal: 1920 } }, audio: false,
+        video: { facingMode: { ideal: mode }, width: { ideal: 1080 }, height: { ideal: 1920 }, aspectRatio: { ideal: W / H } }, audio: false,
       });
       streamRef.current = stream;
       if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
@@ -178,19 +192,19 @@ export default function Home() {
     if (!ctx) throw new Error("無法建立照片");
     ctx.save();
     if (facing === "user") { ctx.translate(W, 0); ctx.scale(-1, 1); }
-    drawCover(ctx, video, video.videoWidth, video.videoHeight);
+    drawCameraFit(ctx, video, video.videoWidth, video.videoHeight);
     ctx.restore();
     return canvasBlob(snapshot);
   };
 
   const drawPhotoCard = (ctx: CanvasRenderingContext2D, image: HTMLImageElement, cx: number, cy: number, angle: number, label: string) => {
-    const cardW = 790; const cardH = 620; const inset = 24; const footer = 72;
+    const cardW = 520; const cardH = 960; const inset = 20; const photoW = cardW - inset * 2; const photoH = photoW * 16 / 9;
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(angle);
     ctx.shadowColor = "rgba(5,17,38,.32)"; ctx.shadowBlur = 38; ctx.shadowOffsetY = 20;
     ctx.fillStyle = "#fffdf8"; ctx.beginPath(); ctx.roundRect(-cardW / 2, -cardH / 2, cardW, cardH, 28); ctx.fill();
     ctx.shadowColor = "transparent";
-    ctx.save(); ctx.beginPath(); ctx.roundRect(-cardW / 2 + inset, -cardH / 2 + inset, cardW - inset * 2, cardH - footer - inset, 16); ctx.clip();
-    drawCoverInRect(ctx, image, -cardW / 2 + inset, -cardH / 2 + inset, cardW - inset * 2, cardH - footer - inset);
+    ctx.save(); ctx.beginPath(); ctx.roundRect(-cardW / 2 + inset, -cardH / 2 + inset, photoW, photoH, 16); ctx.clip();
+    drawCoverInRect(ctx, image, -cardW / 2 + inset, -cardH / 2 + inset, photoW, photoH);
     ctx.restore();
     ctx.fillStyle = "#a77b2d"; ctx.font = "600 27px Georgia, serif"; ctx.textAlign = "right";
     ctx.fillText(label, cardW / 2 - 28, cardH / 2 - 23);
@@ -219,8 +233,8 @@ export default function Home() {
     }
     ctx.restore();
 
-    drawPhotoCard(ctx, first, 445, 615, -Math.PI / 60, "PHOTO 01");
-    drawPhotoCard(ctx, second, 625, 1300, Math.PI / 55, "PHOTO 02");
+    drawPhotoCard(ctx, first, 355, 550, -Math.PI / 72, "PHOTO 01");
+    drawPhotoCard(ctx, second, 715, 1320, Math.PI / 72, "PHOTO 02");
 
     if (brand?.complete && brand.naturalWidth) {
       ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = .86;
