@@ -246,17 +246,10 @@ export default function Home() {
     try {
       for (let n = 3; n > 0; n -= 1) { setCountdown(n); await new Promise((resolve) => window.setTimeout(resolve, 700)); }
       setCountdown(null);
-      const blob = await takeRawPhoto();
-      const previewBlob = shotsRef.current.length === 0 && canvasRef.current ? await canvasBlob(canvasRef.current) : null;
-      const shot: CapturedPhoto = { url: URL.createObjectURL(blob), blob, previewUrl: previewBlob ? URL.createObjectURL(previewBlob) : undefined };
-      const next = [...shotsRef.current, shot]; shotsRef.current = next; setShots(next);
-      if (next.length === 1) {
-        setReviewingFirst(true);
-      } else {
-        const collageBlob = await composeCollage(next);
-        setResult({ url: URL.createObjectURL(collageBlob), blob: collageBlob, kind: "photo" });
-        setReviewingFirst(false); void recordAnonymousUse();
-      }
+      if (!canvasRef.current) throw new Error("無法建立照片");
+      const blob = await canvasBlob(canvasRef.current);
+      setResult({ url: URL.createObjectURL(blob), blob, kind: "photo" });
+      void recordAnonymousUse();
     } catch (cause) {
       setCountdown(null); setError(cause instanceof Error ? cause.message : "拍照失敗，請再試一次。");
     } finally { setCapturing(false); }
@@ -298,7 +291,7 @@ export default function Home() {
   };
 
   const extension = result?.blob.type.includes("mp4") ? "mp4" : "webm";
-  const filename = result?.kind === "photo" ? "2026金安獎_雙人拍貼.png" : `2026金安獎_交通之光.${extension}`;
+  const filename = result?.kind === "photo" ? "2026金安獎_交通之光.png" : `2026金安獎_交通之光.${extension}`;
   const isLive = started && !result && !reviewingFirst;
 
   return (
@@ -309,16 +302,15 @@ export default function Home() {
           <div><p className="eyebrow">2026 SAFETY GOLD AWARD</p><h1>金安無限・交通之光</h1></div>
           {isLive && <button className="icon-button" onClick={switchCamera} aria-label="切換前後鏡頭"><SwitchCamera size={23} /></button>}
         </header>
-        <div className={`stage ${result?.kind === "photo" ? "final-stage" : ""}`}>
+        <div className="stage">
           <canvas ref={canvasRef} width={W} height={H} />
           {!started && !result && <div className="welcome">
             <div className="welcome-mark"><Sparkles size={22} /></div><p>雙照片金光拍貼</p>
             <button className="start-button" onClick={() => openCamera()}><Camera size={20} /> 開啟相機</button>
           </div>}
           {countdown !== null && <div className="countdown">{countdown}</div>}
-          {isLive && countdown === null && !recording && <div className="shot-badge">第 {shots.length + 1} 張・共 2 張</div>}
+          {isLive && countdown === null && !recording && <div className="shot-badge">單張拍照</div>}
           {recording && <div className="recording-badge"><span />錄製中<div className="record-track"><i style={{ width: `${recordProgress}%` }} /></div></div>}
-          {reviewingFirst && shots[0] && <><img src={shots[0].previewUrl ?? shots[0].url} className="result-media" alt="第一張照片預覽" /><div className="review-label">第 1 張完成</div></>}
           {result?.kind === "photo" && <img src={result.url} className="result-media" alt="金安獎雙照片拍貼預覽" />}
           {result?.kind === "video" && <video src={result.url} className="result-media" autoPlay loop muted playsInline controls />}
         </div>
@@ -326,15 +318,9 @@ export default function Home() {
         <div className="controls-area">
           <footer className="controls">
             {isLive && <>
-              {shots.length === 0
-                ? <button className="secondary-action" onClick={recordVideo} disabled={recording || capturing}><VideoIcon size={20} />{recording ? "錄製中" : "錄製 10 秒"}</button>
-                : <span className="shot-indicator">第 2 張</span>}
+              <button className="secondary-action" onClick={recordVideo} disabled={recording || capturing}><VideoIcon size={20} />{recording ? "錄製中" : "錄製 10 秒"}</button>
               <button className="shutter" onClick={capturePhoto} disabled={recording || capturing} aria-label={`拍第 ${shots.length + 1} 張照片`}><span><Camera size={26} /></span></button>
               <span className="control-spacer" aria-hidden="true" />
-            </>}
-            {reviewingFirst && <>
-              <button className="secondary-action" onClick={retakeFirst}><RefreshCw size={19} />重拍第 1 張</button>
-              <button className="secondary-action next-shot" onClick={() => setReviewingFirst(false)}><Camera size={19} />拍第 2 張</button>
             </>}
             {result && <>
               <button className="secondary-action" onClick={resetSession}><RefreshCw size={19} />重新拍攝</button>
