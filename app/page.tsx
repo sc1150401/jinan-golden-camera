@@ -4,8 +4,7 @@ import { Camera, Download, RefreshCw, Sparkles, SwitchCamera, Video as VideoIcon
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Result = { url: string; blob: Blob; kind: "photo" | "video" } | null;
-type FrameVariant = 0 | 1;
-type PhotoItem = { url: string; blob: Blob; frame: FrameVariant };
+type CapturedPhoto = { url: string; blob: Blob };
 type GoldParticle = { x: number; y: number; r: number; drift: number; speed: number; phase: number; star: boolean };
 const W = 1080;
 const H = 1920;
@@ -17,6 +16,26 @@ function drawCover(ctx: CanvasRenderingContext2D, source: CanvasImageSource, sw:
   ctx.drawImage(source, (W - dw) / 2, (H - dh) / 2, dw, dh);
 }
 
+function drawCoverInRect(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, w: number, h: number) {
+  const scale = Math.max(w / image.naturalWidth, h / image.naturalHeight);
+  const dw = image.naturalWidth * scale;
+  const dh = image.naturalHeight * scale;
+  ctx.drawImage(image, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+}
+
+function canvasBlob(canvas: HTMLCanvasElement, type = "image/png") {
+  return new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("無法建立照片")), type));
+}
+
+function loadImage(url: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("無法讀取照片"));
+    image.src = url;
+  });
+}
+
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -26,7 +45,7 @@ export default function Home() {
   const chunksRef = useRef<Blob[]>([]);
   const particlesRef = useRef<GoldParticle[]>([]);
   const resultRef = useRef<Result>(null);
-  const photosRef = useRef<PhotoItem[]>([]);
+  const shotsRef = useRef<CapturedPhoto[]>([]);
 
   const [started, setStarted] = useState(false);
   const [facing, setFacing] = useState<"user" | "environment">("user");
@@ -35,9 +54,9 @@ export default function Home() {
   const [recording, setRecording] = useState(false);
   const [recordProgress, setRecordProgress] = useState(0);
   const [result, setResult] = useState<Result>(null);
-  const [photos, setPhotos] = useState<PhotoItem[]>([]);
-  const [activePhoto, setActivePhoto] = useState(0);
-  const [frameVariant, setFrameVariant] = useState<FrameVariant>(() => Math.random() < .5 ? 0 : 1);
+  const [shots, setShots] = useState<CapturedPhoto[]>([]);
+  const [reviewingFirst, setReviewingFirst] = useState(false);
+  const [capturing, setCapturing] = useState(false);
 
   useEffect(() => { resultRef.current = result; }, [result]);
 
@@ -56,8 +75,8 @@ export default function Home() {
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       streamRef.current?.getTracks().forEach((track) => track.stop());
-      photosRef.current.forEach((photo) => URL.revokeObjectURL(photo.url));
-      if (resultRef.current?.kind === "video") URL.revokeObjectURL(resultRef.current.url);
+      shotsRef.current.forEach((shot) => URL.revokeObjectURL(shot.url));
+      if (resultRef.current) URL.revokeObjectURL(resultRef.current.url);
     };
   }, []);
 
@@ -75,7 +94,7 @@ export default function Home() {
       ctx.restore();
     } else {
       const bg = ctx.createLinearGradient(0, 0, W, H);
-      bg.addColorStop(0, "#f9f4e5"); bg.addColorStop(0.55, "#e9d7aa"); bg.addColorStop(1, "#172643");
+      bg.addColorStop(0, "#f9f4e5"); bg.addColorStop(.55, "#e9d7aa"); bg.addColorStop(1, "#172643");
       ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
     }
 
@@ -87,10 +106,8 @@ export default function Home() {
     const brand = brandRef.current;
     if (brand?.complete && brand.naturalWidth) {
       ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = .92;
-      ctx.drawImage(brand, 744, 286, 510, 366, frameVariant === 0 ? 430 : 80, 92, 570, 410); ctx.restore();
-      ctx.save(); ctx.globalAlpha = .8; ctx.beginPath();
-      ctx.rect(frameVariant === 0 ? 0 : W - 232, 0, 232, H); ctx.clip();
-      if (frameVariant === 1) { ctx.translate(W, 0); ctx.scale(-1, 1); }
+      ctx.drawImage(brand, 744, 286, 510, 366, 430, 92, 570, 410); ctx.restore();
+      ctx.save(); ctx.globalAlpha = .8; ctx.beginPath(); ctx.rect(0, 0, 232, H); ctx.clip();
       ctx.drawImage(brand, 0, 135, 620, 836, -350, -24, 780, H + 48); ctx.restore();
       ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = .8;
       ctx.drawImage(brand, 275, 870, 470, 102, 264, 1762, 552, 120); ctx.restore();
@@ -126,7 +143,7 @@ export default function Home() {
     ctx.beginPath(); ctx.roundRect(58, 52, W - 116, H - 104, 50);
     ctx.strokeStyle = "rgba(222,191,121,.82)"; ctx.lineWidth = 2; ctx.stroke();
     animationRef.current = requestAnimationFrame(renderFrame);
-  }, [facing, frameVariant]);
+  }, [facing]);
 
   useEffect(() => {
     if (animationRef.current) cancelAnimationFrame(animationRef.current);
@@ -136,7 +153,6 @@ export default function Home() {
 
   const openCamera = async (mode = facing) => {
     setError("");
-    if (photosRef.current.length === 0) setFrameVariant(Math.random() < .5 ? 0 : 1);
     try {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -153,20 +169,94 @@ export default function Home() {
     setFacing(next); await openCamera(next);
   };
 
+  const takeRawPhoto = async () => {
+    const video = videoRef.current;
+    if (!video || video.readyState < 2 || !video.videoWidth) throw new Error("相機尚未準備完成");
+    const snapshot = document.createElement("canvas");
+    snapshot.width = W; snapshot.height = H;
+    const ctx = snapshot.getContext("2d");
+    if (!ctx) throw new Error("無法建立照片");
+    ctx.save();
+    if (facing === "user") { ctx.translate(W, 0); ctx.scale(-1, 1); }
+    drawCover(ctx, video, video.videoWidth, video.videoHeight);
+    ctx.restore();
+    return canvasBlob(snapshot);
+  };
+
+  const drawPhotoCard = (ctx: CanvasRenderingContext2D, image: HTMLImageElement, cx: number, cy: number, angle: number, label: string) => {
+    const cardW = 790; const cardH = 620; const inset = 24; const footer = 72;
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(angle);
+    ctx.shadowColor = "rgba(5,17,38,.32)"; ctx.shadowBlur = 38; ctx.shadowOffsetY = 20;
+    ctx.fillStyle = "#fffdf8"; ctx.beginPath(); ctx.roundRect(-cardW / 2, -cardH / 2, cardW, cardH, 28); ctx.fill();
+    ctx.shadowColor = "transparent";
+    ctx.save(); ctx.beginPath(); ctx.roundRect(-cardW / 2 + inset, -cardH / 2 + inset, cardW - inset * 2, cardH - footer - inset, 16); ctx.clip();
+    drawCoverInRect(ctx, image, -cardW / 2 + inset, -cardH / 2 + inset, cardW - inset * 2, cardH - footer - inset);
+    ctx.restore();
+    ctx.fillStyle = "#a77b2d"; ctx.font = "600 27px Georgia, serif"; ctx.textAlign = "right";
+    ctx.fillText(label, cardW / 2 - 28, cardH / 2 - 23);
+    ctx.restore();
+  };
+
+  const composeCollage = async (items: CapturedPhoto[]) => {
+    const collage = document.createElement("canvas"); collage.width = W; collage.height = H;
+    const ctx = collage.getContext("2d");
+    if (!ctx) throw new Error("無法建立拍貼");
+    const [first, second] = await Promise.all(items.map((item) => loadImage(item.url)));
+    const bg = ctx.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0, "#fbf7ec"); bg.addColorStop(.62, "#efe0b9"); bg.addColorStop(1, "#caa65d");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+    const brand = brandRef.current;
+    if (brand?.complete && brand.naturalWidth) {
+      ctx.save(); ctx.globalAlpha = .22; ctx.drawImage(brand, 0, 135, 620, 836, -250, -40, 720, 970); ctx.restore();
+      ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = .9;
+      ctx.drawImage(brand, 744, 286, 510, 366, 575, 24, 440, 316); ctx.restore();
+    }
+
+    ctx.save(); ctx.strokeStyle = "rgba(185,139,55,.36)"; ctx.lineWidth = 3;
+    for (let i = 0; i < 5; i += 1) {
+      ctx.beginPath(); ctx.moveTo(-80, 745 + i * 22); ctx.bezierCurveTo(250, 620 + i * 8, 760, 880 - i * 12, 1160, 690 + i * 20); ctx.stroke();
+    }
+    ctx.restore();
+
+    drawPhotoCard(ctx, first, 445, 615, -Math.PI / 60, "PHOTO 01");
+    drawPhotoCard(ctx, second, 625, 1300, Math.PI / 55, "PHOTO 02");
+
+    if (brand?.complete && brand.naturalWidth) {
+      ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = .86;
+      ctx.drawImage(brand, 275, 870, 470, 102, 264, 1770, 552, 120); ctx.restore();
+    }
+    ctx.beginPath(); ctx.roundRect(45, 40, W - 90, H - 80, 46); ctx.strokeStyle = "rgba(172,126,45,.72)"; ctx.lineWidth = 3; ctx.stroke();
+    return canvasBlob(collage);
+  };
+
+  const recordAnonymousUse = async () => {
+    try {
+      let deviceId = localStorage.getItem("jinan-anonymous-device");
+      if (!deviceId) { deviceId = crypto.randomUUID(); localStorage.setItem("jinan-anonymous-device", deviceId); }
+      await fetch("/api/usage", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ deviceId }), keepalive: true });
+    } catch { /* Statistics must never block the camera experience. */ }
+  };
+
   const capturePhoto = async () => {
-    if (!started || recording) return;
-    for (let n = 3; n > 0; n -= 1) { setCountdown(n); await new Promise((resolve) => window.setTimeout(resolve, 700)); }
-    setCountdown(null);
-    canvasRef.current?.toBlob((blob) => {
-      if (!blob) return;
-      const photo: PhotoItem = { url: URL.createObjectURL(blob), blob, frame: frameVariant };
-      const index = photosRef.current.length;
-      const next = [...photosRef.current, photo];
-      photosRef.current = next;
-      setPhotos(next);
-      setActivePhoto(index);
-      setResult({ url: photo.url, blob: photo.blob, kind: "photo" });
-    }, "image/png");
+    if (!started || recording || capturing) return;
+    setCapturing(true); setError("");
+    try {
+      for (let n = 3; n > 0; n -= 1) { setCountdown(n); await new Promise((resolve) => window.setTimeout(resolve, 700)); }
+      setCountdown(null);
+      const blob = await takeRawPhoto();
+      const shot: CapturedPhoto = { url: URL.createObjectURL(blob), blob };
+      const next = [...shotsRef.current, shot]; shotsRef.current = next; setShots(next);
+      if (next.length === 1) {
+        setReviewingFirst(true);
+      } else {
+        const collageBlob = await composeCollage(next);
+        setResult({ url: URL.createObjectURL(collageBlob), blob: collageBlob, kind: "photo" });
+        setReviewingFirst(false); void recordAnonymousUse();
+      }
+    } catch (cause) {
+      setCountdown(null); setError(cause instanceof Error ? cause.message : "拍照失敗，請再試一次。");
+    } finally { setCapturing(false); }
   };
 
   const recordVideo = () => {
@@ -195,73 +285,61 @@ export default function Home() {
   };
 
   const resetSession = () => {
-    photosRef.current.forEach((photo) => URL.revokeObjectURL(photo.url));
-    photosRef.current = [];
-    setPhotos([]);
-    if (result?.kind === "video") URL.revokeObjectURL(result.url);
-    setResult(null);
-    setActivePhoto(0);
-    setFrameVariant(Math.random() < .5 ? 0 : 1);
+    shotsRef.current.forEach((shot) => URL.revokeObjectURL(shot.url)); shotsRef.current = []; setShots([]);
+    if (result) URL.revokeObjectURL(result.url);
+    setResult(null); setReviewingFirst(false); setError("");
   };
 
-  const prepareSecondPhoto = () => {
-    if (photos.length !== 1) return;
-    setFrameVariant(photos[0].frame === 0 ? 1 : 0);
-    setResult(null);
-  };
-
-  const selectPhoto = (index: number) => {
-    const photo = photos[index];
-    if (!photo) return;
-    setActivePhoto(index);
-    setResult({ url: photo.url, blob: photo.blob, kind: "photo" });
+  const retakeFirst = () => {
+    shotsRef.current.forEach((shot) => URL.revokeObjectURL(shot.url)); shotsRef.current = []; setShots([]); setReviewingFirst(false);
   };
 
   const extension = result?.blob.type.includes("mp4") ? "mp4" : "webm";
-  const filename = result?.kind === "photo" ? `2026金安獎_交通之光_第${activePhoto + 1}張.png` : `2026金安獎_交通之光.${extension}`;
+  const filename = result?.kind === "photo" ? "2026金安獎_雙人拍貼.png" : `2026金安獎_交通之光.${extension}`;
+  const isLive = started && !result && !reviewingFirst;
 
   return (
     <main className="camera-app">
       <video ref={videoRef} muted playsInline className="source-video" aria-hidden="true" />
-      <section className="camera-shell" aria-label="2026 金安獎打卡相機">
+      <section className="camera-shell" aria-label="2026 金安獎雙照片拍貼相機">
         <header className="topbar">
           <div><p className="eyebrow">2026 SAFETY GOLD AWARD</p><h1>金安無限・交通之光</h1></div>
-          {started && !result && <button className="icon-button" onClick={switchCamera} aria-label="切換前後鏡頭"><SwitchCamera size={23} /></button>}
+          {isLive && <button className="icon-button" onClick={switchCamera} aria-label="切換前後鏡頭"><SwitchCamera size={23} /></button>}
         </header>
         <div className="stage">
           <canvas ref={canvasRef} width={W} height={H} />
           {!started && !result && <div className="welcome">
-            <div className="welcome-mark"><Sparkles size={22} /></div><p>典雅金光打卡框</p>
+            <div className="welcome-mark"><Sparkles size={22} /></div><p>雙照片金光拍貼</p>
             <button className="start-button" onClick={() => openCamera()}><Camera size={20} /> 開啟相機</button>
           </div>}
           {countdown !== null && <div className="countdown">{countdown}</div>}
-          {started && !result && countdown === null && !recording && <div className="shot-badge">第 {photos.length + 1} 張・框 {frameVariant === 0 ? "A" : "B"}</div>}
+          {isLive && countdown === null && !recording && <div className="shot-badge">第 {shots.length + 1} 張・共 2 張</div>}
           {recording && <div className="recording-badge"><span />錄製中<div className="record-track"><i style={{ width: `${recordProgress}%` }} /></div></div>}
-          {result?.kind === "photo" && <img src={result.url} className="result-media" alt="金安獎打卡照片預覽" />}
+          {reviewingFirst && shots[0] && <><img src={shots[0].url} className="result-media" alt="第一張照片預覽" /><div className="review-label">第 1 張完成</div></>}
+          {result?.kind === "photo" && <img src={result.url} className="result-media" alt="金安獎雙照片拍貼預覽" />}
           {result?.kind === "video" && <video src={result.url} className="result-media" autoPlay loop muted playsInline controls />}
         </div>
         {error && <p className="error-message" role="alert">{error}</p>}
-        <footer className="controls">
-          {started && !result && <>
-            {photos.length === 0
-              ? <button className="secondary-action" onClick={recordVideo} disabled={recording}><VideoIcon size={20} />{recording ? "錄製中" : "錄製 10 秒"}</button>
-              : <span className="shot-indicator">框 {frameVariant === 0 ? "A" : "B"}</span>}
-            <button className="shutter" onClick={capturePhoto} disabled={recording} aria-label="拍照"><span><Camera size={26} /></span></button>
-            <span className="control-spacer" aria-hidden="true" />
-          </>}
-          {result?.kind === "photo" && <div className="photo-actions">
-            {photos.length === 2 && <div className="photo-tabs" aria-label="選擇照片">
-              {photos.map((_, index) => <button key={index} className={activePhoto === index ? "active" : ""} onClick={() => selectPhoto(index)}>第 {index + 1} 張</button>)}
-            </div>}
-            <button className="secondary-action" onClick={resetSession}><RefreshCw size={19} />重新拍攝</button>
-            <a className="secondary-action" href={result.url} download={filename}><Download size={19} />下載第 {activePhoto + 1} 張</a>
-            {photos.length === 1 && <button className="secondary-action next-shot" onClick={prepareSecondPhoto}><Camera size={19} />拍第 2 張</button>}
-          </div>}
-          {result?.kind === "video" && <>
-            <button className="secondary-action" onClick={resetSession}><RefreshCw size={19} />重拍</button>
-            <a className="secondary-action" href={result.url} download={filename}><Download size={19} />下載</a>
-          </>}
-        </footer>
+        <div className="controls-area">
+          <footer className="controls">
+            {isLive && <>
+              {shots.length === 0
+                ? <button className="secondary-action" onClick={recordVideo} disabled={recording || capturing}><VideoIcon size={20} />{recording ? "錄製中" : "錄製 10 秒"}</button>
+                : <span className="shot-indicator">第 2 張</span>}
+              <button className="shutter" onClick={capturePhoto} disabled={recording || capturing} aria-label={`拍第 ${shots.length + 1} 張照片`}><span><Camera size={26} /></span></button>
+              <span className="control-spacer" aria-hidden="true" />
+            </>}
+            {reviewingFirst && <>
+              <button className="secondary-action" onClick={retakeFirst}><RefreshCw size={19} />重拍第 1 張</button>
+              <button className="secondary-action next-shot" onClick={() => setReviewingFirst(false)}><Camera size={19} />拍第 2 張</button>
+            </>}
+            {result && <>
+              <button className="secondary-action" onClick={resetSession}><RefreshCw size={19} />重新拍攝</button>
+              <a className="secondary-action" href={result.url} download={filename}><Download size={19} />下載拍貼</a>
+            </>}
+          </footer>
+          <p className="privacy-note">照片只在你的手機合成，不會上傳或保存。</p>
+        </div>
       </section>
     </main>
   );
