@@ -7,7 +7,8 @@ type Result = { url: string; blob: Blob; kind: "photo" | "video" } | null;
 type CapturedPhoto = { url: string; blob: Blob };
 type GoldParticle = { x: number; y: number; r: number; drift: number; speed: number; phase: number; star: boolean };
 const W = 1080;
-const H = 1920;
+const H = 1440;
+const OUTPUT_H = 1920;
 
 function drawCover(ctx: CanvasRenderingContext2D, source: CanvasImageSource, sw: number, sh: number) {
   const scale = Math.max(W / sw, H / sh);
@@ -124,7 +125,7 @@ export default function Home() {
       ctx.save(); ctx.globalAlpha = .8; ctx.beginPath(); ctx.rect(0, 0, 232, H); ctx.clip();
       ctx.drawImage(brand, 0, 135, 620, 836, -350, -24, 780, H + 48); ctx.restore();
       ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = .8;
-      ctx.drawImage(brand, 275, 870, 470, 102, 264, 1762, 552, 120); ctx.restore();
+      ctx.drawImage(brand, 275, 870, 470, 102, 264, H - 126, 552, 120); ctx.restore();
     }
 
     const t = now / 1000;
@@ -133,8 +134,8 @@ export default function Home() {
       const gradient = ctx.createLinearGradient(0, 0, W, 0);
       gradient.addColorStop(0, "rgba(188,151,76,0)"); gradient.addColorStop(.38, `rgba(245,218,150,${.22 + line * .05})`);
       gradient.addColorStop(.72, "rgba(255,244,205,.72)"); gradient.addColorStop(1, "rgba(188,151,76,0)");
-      ctx.beginPath(); ctx.moveTo(-80, 1260 + line * 34);
-      ctx.bezierCurveTo(240, 1060 + offset, 740, 1515 - offset, 1160, 1280 + line * 26);
+      ctx.beginPath(); ctx.moveTo(-80, 980 + line * 28);
+      ctx.bezierCurveTo(240, 840 + offset, 740, 1160 - offset, 1160, 1000 + line * 24);
       ctx.strokeStyle = gradient; ctx.lineWidth = 2.2 - line * .4; ctx.stroke();
     }
 
@@ -151,9 +152,9 @@ export default function Home() {
       ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
     }
 
-    const bottomFade = ctx.createLinearGradient(0, 1520, 0, H);
+    const bottomFade = ctx.createLinearGradient(0, H - 340, 0, H);
     bottomFade.addColorStop(0, "rgba(9,25,53,0)"); bottomFade.addColorStop(1, "rgba(9,25,53,.82)");
-    ctx.fillStyle = bottomFade; ctx.fillRect(0, 1500, W, 420);
+    ctx.fillStyle = bottomFade; ctx.fillRect(0, H - 360, W, 360);
     ctx.beginPath(); ctx.roundRect(58, 52, W - 116, H - 104, 50);
     ctx.strokeStyle = "rgba(222,191,121,.82)"; ctx.lineWidth = 2; ctx.stroke();
     animationRef.current = requestAnimationFrame(renderFrame);
@@ -170,7 +171,7 @@ export default function Home() {
     try {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: mode }, width: { ideal: 1080 }, height: { ideal: 1920 }, aspectRatio: { ideal: W / H } }, audio: false,
+        video: { facingMode: { ideal: mode }, width: { ideal: 1080 }, height: { ideal: 1440 }, aspectRatio: { ideal: 3 / 4 } }, audio: false,
       });
       streamRef.current = stream;
       if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
@@ -197,50 +198,48 @@ export default function Home() {
     return canvasBlob(snapshot);
   };
 
-  const drawPhotoCard = (ctx: CanvasRenderingContext2D, image: HTMLImageElement, cx: number, cy: number, angle: number, label: string) => {
-    const cardW = 520; const cardH = 960; const inset = 20; const photoW = cardW - inset * 2; const photoH = photoW * 16 / 9;
-    ctx.save(); ctx.translate(cx, cy); ctx.rotate(angle);
-    ctx.shadowColor = "rgba(5,17,38,.32)"; ctx.shadowBlur = 38; ctx.shadowOffsetY = 20;
-    ctx.fillStyle = "#fffdf8"; ctx.beginPath(); ctx.roundRect(-cardW / 2, -cardH / 2, cardW, cardH, 28); ctx.fill();
+  const drawPhotoPanel = (ctx: CanvasRenderingContext2D, image: HTMLImageElement, y: number, label: string) => {
+    const x = 225; const panelW = 630; const panelH = 840;
+    ctx.save();
+    ctx.shadowColor = "rgba(5,17,38,.28)"; ctx.shadowBlur = 26; ctx.shadowOffsetY = 10;
+    ctx.fillStyle = "#fffdf8"; ctx.fillRect(x - 10, y - 10, panelW + 20, panelH + 20);
     ctx.shadowColor = "transparent";
-    ctx.save(); ctx.beginPath(); ctx.roundRect(-cardW / 2 + inset, -cardH / 2 + inset, photoW, photoH, 16); ctx.clip();
-    drawCoverInRect(ctx, image, -cardW / 2 + inset, -cardH / 2 + inset, photoW, photoH);
+    ctx.save(); ctx.beginPath(); ctx.rect(x, y, panelW, panelH); ctx.clip();
+    drawCoverInRect(ctx, image, x, y, panelW, panelH);
     ctx.restore();
-    ctx.fillStyle = "#a77b2d"; ctx.font = "600 27px Georgia, serif"; ctx.textAlign = "right";
-    ctx.fillText(label, cardW / 2 - 28, cardH / 2 - 23);
+    ctx.strokeStyle = "rgba(190,145,61,.95)"; ctx.lineWidth = 8; ctx.strokeRect(x - 4, y - 4, panelW + 8, panelH + 8);
+    ctx.fillStyle = "rgba(9,25,53,.72)"; ctx.fillRect(x + 18, y + 18, 148, 48);
+    ctx.fillStyle = "#f5dfaa"; ctx.font = "600 22px Georgia, serif"; ctx.textAlign = "center";
+    ctx.fillText(label, x + 92, y + 50);
     ctx.restore();
   };
 
   const composeCollage = async (items: CapturedPhoto[]) => {
-    const collage = document.createElement("canvas"); collage.width = W; collage.height = H;
+    const collage = document.createElement("canvas"); collage.width = W; collage.height = OUTPUT_H;
     const ctx = collage.getContext("2d");
     if (!ctx) throw new Error("無法建立拍貼");
     const [first, second] = await Promise.all(items.map((item) => loadImage(item.url)));
-    const bg = ctx.createLinearGradient(0, 0, W, H);
+    const bg = ctx.createLinearGradient(0, 0, W, OUTPUT_H);
     bg.addColorStop(0, "#fbf7ec"); bg.addColorStop(.62, "#efe0b9"); bg.addColorStop(1, "#caa65d");
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, OUTPUT_H);
 
     const brand = brandRef.current;
     if (brand?.complete && brand.naturalWidth) {
-      ctx.save(); ctx.globalAlpha = .22; ctx.drawImage(brand, 0, 135, 620, 836, -250, -40, 720, 970); ctx.restore();
-      ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = .9;
-      ctx.drawImage(brand, 744, 286, 510, 366, 575, 24, 440, 316); ctx.restore();
+      ctx.save(); ctx.globalAlpha = .22; ctx.drawImage(brand, 0, 135, 620, 836, -350, -30, 760, OUTPUT_H + 60); ctx.restore();
+      ctx.save(); ctx.translate(W, 0); ctx.scale(-1, 1); ctx.globalAlpha = .16;
+      ctx.drawImage(brand, 0, 135, 620, 836, -350, -30, 760, OUTPUT_H + 60); ctx.restore();
     }
 
-    ctx.save(); ctx.strokeStyle = "rgba(185,139,55,.36)"; ctx.lineWidth = 3;
-    for (let i = 0; i < 5; i += 1) {
-      ctx.beginPath(); ctx.moveTo(-80, 745 + i * 22); ctx.bezierCurveTo(250, 620 + i * 8, 760, 880 - i * 12, 1160, 690 + i * 20); ctx.stroke();
-    }
-    ctx.restore();
-
-    drawPhotoCard(ctx, first, 355, 550, -Math.PI / 72, "PHOTO 01");
-    drawPhotoCard(ctx, second, 715, 1320, Math.PI / 72, "PHOTO 02");
+    ctx.fillStyle = "#10213e"; ctx.font = "600 42px Georgia, 'Noto Serif TC', serif"; ctx.textAlign = "center";
+    ctx.fillText("2026 金安獎・交通之光", W / 2, 74);
+    drawPhotoPanel(ctx, first, 120, "PHOTO 01");
+    drawPhotoPanel(ctx, second, 960, "PHOTO 02");
 
     if (brand?.complete && brand.naturalWidth) {
       ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = .86;
-      ctx.drawImage(brand, 275, 870, 470, 102, 264, 1770, 552, 120); ctx.restore();
+      ctx.drawImage(brand, 275, 870, 470, 102, 300, 1820, 480, 104); ctx.restore();
     }
-    ctx.beginPath(); ctx.roundRect(45, 40, W - 90, H - 80, 46); ctx.strokeStyle = "rgba(172,126,45,.72)"; ctx.lineWidth = 3; ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(45, 30, W - 90, OUTPUT_H - 60, 38); ctx.strokeStyle = "rgba(172,126,45,.72)"; ctx.lineWidth = 3; ctx.stroke();
     return canvasBlob(collage);
   };
 
