@@ -4,28 +4,15 @@ import { Camera, Download, RefreshCw, Sparkles, SwitchCamera, Video as VideoIcon
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Result = { url: string; blob: Blob; kind: "photo" | "video" } | null;
-type CapturedPhoto = { url: string; blob: Blob };
+type CapturedPhoto = { url: string; blob: Blob; previewUrl?: string };
 type GoldParticle = { x: number; y: number; r: number; drift: number; speed: number; phase: number; star: boolean };
-const W = 1080;
-const H = 1440;
+const W = 1280;
+const H = 720;
+const OUTPUT_W = 1080;
 const OUTPUT_H = 1920;
 
 function drawCover(ctx: CanvasRenderingContext2D, source: CanvasImageSource, sw: number, sh: number) {
   const scale = Math.max(W / sw, H / sh);
-  const dw = sw * scale;
-  const dh = sh * scale;
-  ctx.drawImage(source, (W - dw) / 2, (H - dh) / 2, dw, dh);
-}
-
-function drawCameraFit(ctx: CanvasRenderingContext2D, source: CanvasImageSource, sw: number, sh: number) {
-  ctx.fillStyle = "#0a1830";
-  ctx.fillRect(0, 0, W, H);
-  ctx.save();
-  ctx.filter = "blur(42px) brightness(.58)";
-  ctx.globalAlpha = .72;
-  drawCover(ctx, source, sw, sh);
-  ctx.restore();
-  const scale = Math.min(W / sw, H / sh);
   const dw = sw * scale;
   const dh = sh * scale;
   ctx.drawImage(source, (W - dw) / 2, (H - dh) / 2, dw, dh);
@@ -90,7 +77,7 @@ export default function Home() {
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       streamRef.current?.getTracks().forEach((track) => track.stop());
-      shotsRef.current.forEach((shot) => URL.revokeObjectURL(shot.url));
+      shotsRef.current.forEach((shot) => { URL.revokeObjectURL(shot.url); if (shot.previewUrl) URL.revokeObjectURL(shot.previewUrl); });
       if (resultRef.current) URL.revokeObjectURL(resultRef.current.url);
     };
   }, []);
@@ -105,7 +92,7 @@ export default function Home() {
     if (video && video.readyState >= 2 && video.videoWidth) {
       ctx.save();
       if (facing === "user") { ctx.translate(W, 0); ctx.scale(-1, 1); }
-      drawCameraFit(ctx, video, video.videoWidth, video.videoHeight);
+      drawCover(ctx, video, video.videoWidth, video.videoHeight);
       ctx.restore();
     } else {
       const bg = ctx.createLinearGradient(0, 0, W, H);
@@ -121,11 +108,11 @@ export default function Home() {
     const brand = brandRef.current;
     if (brand?.complete && brand.naturalWidth) {
       ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = .92;
-      ctx.drawImage(brand, 744, 286, 510, 366, 430, 92, 570, 410); ctx.restore();
-      ctx.save(); ctx.globalAlpha = .8; ctx.beginPath(); ctx.rect(0, 0, 232, H); ctx.clip();
-      ctx.drawImage(brand, 0, 135, 620, 836, -350, -24, 780, H + 48); ctx.restore();
+      ctx.drawImage(brand, 744, 286, 510, 366, 735, 18, 500, 359); ctx.restore();
+      ctx.save(); ctx.globalAlpha = .76; ctx.beginPath(); ctx.rect(0, 0, 180, H); ctx.clip();
+      ctx.drawImage(brand, 0, 135, 620, 836, -285, -12, 650, H + 24); ctx.restore();
       ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = .8;
-      ctx.drawImage(brand, 275, 870, 470, 102, 264, H - 126, 552, 120); ctx.restore();
+      ctx.drawImage(brand, 275, 870, 470, 102, 430, H - 98, 420, 91); ctx.restore();
     }
 
     const t = now / 1000;
@@ -134,8 +121,8 @@ export default function Home() {
       const gradient = ctx.createLinearGradient(0, 0, W, 0);
       gradient.addColorStop(0, "rgba(188,151,76,0)"); gradient.addColorStop(.38, `rgba(245,218,150,${.22 + line * .05})`);
       gradient.addColorStop(.72, "rgba(255,244,205,.72)"); gradient.addColorStop(1, "rgba(188,151,76,0)");
-      ctx.beginPath(); ctx.moveTo(-80, 980 + line * 28);
-      ctx.bezierCurveTo(240, 840 + offset, 740, 1160 - offset, 1160, 1000 + line * 24);
+      ctx.beginPath(); ctx.moveTo(-80, 480 + line * 18);
+      ctx.bezierCurveTo(300, 390 + offset, 860, 650 - offset, 1360, 490 + line * 18);
       ctx.strokeStyle = gradient; ctx.lineWidth = 2.2 - line * .4; ctx.stroke();
     }
 
@@ -152,10 +139,10 @@ export default function Home() {
       ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
     }
 
-    const bottomFade = ctx.createLinearGradient(0, H - 340, 0, H);
+    const bottomFade = ctx.createLinearGradient(0, H - 190, 0, H);
     bottomFade.addColorStop(0, "rgba(9,25,53,0)"); bottomFade.addColorStop(1, "rgba(9,25,53,.82)");
-    ctx.fillStyle = bottomFade; ctx.fillRect(0, H - 360, W, 360);
-    ctx.beginPath(); ctx.roundRect(58, 52, W - 116, H - 104, 50);
+    ctx.fillStyle = bottomFade; ctx.fillRect(0, H - 210, W, 210);
+    ctx.beginPath(); ctx.roundRect(28, 24, W - 56, H - 48, 28);
     ctx.strokeStyle = "rgba(222,191,121,.82)"; ctx.lineWidth = 2; ctx.stroke();
     animationRef.current = requestAnimationFrame(renderFrame);
   }, [facing]);
@@ -171,7 +158,7 @@ export default function Home() {
     try {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: mode }, width: { ideal: 1080 }, height: { ideal: 1440 }, aspectRatio: { ideal: 3 / 4 } }, audio: false,
+        video: { facingMode: { ideal: mode }, width: { ideal: 1920 }, height: { ideal: 1080 }, aspectRatio: { ideal: 16 / 9 } }, audio: false,
       });
       streamRef.current = stream;
       if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
@@ -193,13 +180,13 @@ export default function Home() {
     if (!ctx) throw new Error("無法建立照片");
     ctx.save();
     if (facing === "user") { ctx.translate(W, 0); ctx.scale(-1, 1); }
-    drawCameraFit(ctx, video, video.videoWidth, video.videoHeight);
+    drawCover(ctx, video, video.videoWidth, video.videoHeight);
     ctx.restore();
     return canvasBlob(snapshot);
   };
 
   const drawPhotoPanel = (ctx: CanvasRenderingContext2D, image: HTMLImageElement, y: number, label: string) => {
-    const x = 225; const panelW = 630; const panelH = 840;
+    const x = 40; const panelW = 1000; const panelH = 562.5;
     ctx.save();
     ctx.shadowColor = "rgba(5,17,38,.28)"; ctx.shadowBlur = 26; ctx.shadowOffsetY = 10;
     ctx.fillStyle = "#fffdf8"; ctx.fillRect(x - 10, y - 10, panelW + 20, panelH + 20);
@@ -215,31 +202,32 @@ export default function Home() {
   };
 
   const composeCollage = async (items: CapturedPhoto[]) => {
-    const collage = document.createElement("canvas"); collage.width = W; collage.height = OUTPUT_H;
+    const collage = document.createElement("canvas"); collage.width = OUTPUT_W; collage.height = OUTPUT_H;
     const ctx = collage.getContext("2d");
     if (!ctx) throw new Error("無法建立拍貼");
     const [first, second] = await Promise.all(items.map((item) => loadImage(item.url)));
-    const bg = ctx.createLinearGradient(0, 0, W, OUTPUT_H);
+    const bg = ctx.createLinearGradient(0, 0, OUTPUT_W, OUTPUT_H);
     bg.addColorStop(0, "#fbf7ec"); bg.addColorStop(.62, "#efe0b9"); bg.addColorStop(1, "#caa65d");
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, OUTPUT_H);
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, OUTPUT_W, OUTPUT_H);
 
     const brand = brandRef.current;
     if (brand?.complete && brand.naturalWidth) {
-      ctx.save(); ctx.globalAlpha = .22; ctx.drawImage(brand, 0, 135, 620, 836, -350, -30, 760, OUTPUT_H + 60); ctx.restore();
-      ctx.save(); ctx.translate(W, 0); ctx.scale(-1, 1); ctx.globalAlpha = .16;
-      ctx.drawImage(brand, 0, 135, 620, 836, -350, -30, 760, OUTPUT_H + 60); ctx.restore();
+      ctx.save(); ctx.globalAlpha = .2; ctx.drawImage(brand, 0, 135, 620, 836, -310, 1210, 720, 970); ctx.restore();
+      ctx.save(); ctx.translate(OUTPUT_W, 0); ctx.scale(-1, 1); ctx.globalAlpha = .14;
+      ctx.drawImage(brand, 0, 135, 620, 836, -310, 1210, 720, 970); ctx.restore();
     }
 
-    ctx.fillStyle = "#10213e"; ctx.font = "600 42px Georgia, 'Noto Serif TC', serif"; ctx.textAlign = "center";
-    ctx.fillText("2026 金安獎・交通之光", W / 2, 74);
-    drawPhotoPanel(ctx, first, 120, "PHOTO 01");
-    drawPhotoPanel(ctx, second, 960, "PHOTO 02");
+    ctx.fillStyle = "#10213e"; ctx.font = "600 46px Georgia, 'Noto Serif TC', serif"; ctx.textAlign = "center";
+    ctx.fillText("2026 金安獎・交通之光", OUTPUT_W / 2, 112);
+    drawPhotoPanel(ctx, first, 185, "PHOTO 01");
+    drawPhotoPanel(ctx, second, 747.5, "PHOTO 02");
 
     if (brand?.complete && brand.naturalWidth) {
       ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = .86;
-      ctx.drawImage(brand, 275, 870, 470, 102, 300, 1820, 480, 104); ctx.restore();
+      ctx.drawImage(brand, 744, 286, 510, 366, 435, 1370, 560, 402);
+      ctx.drawImage(brand, 275, 870, 470, 102, 264, 1790, 552, 120); ctx.restore();
     }
-    ctx.beginPath(); ctx.roundRect(45, 30, W - 90, OUTPUT_H - 60, 38); ctx.strokeStyle = "rgba(172,126,45,.72)"; ctx.lineWidth = 3; ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(30, 25, OUTPUT_W - 60, OUTPUT_H - 50, 34); ctx.strokeStyle = "rgba(172,126,45,.72)"; ctx.lineWidth = 3; ctx.stroke();
     return canvasBlob(collage);
   };
 
@@ -258,7 +246,8 @@ export default function Home() {
       for (let n = 3; n > 0; n -= 1) { setCountdown(n); await new Promise((resolve) => window.setTimeout(resolve, 700)); }
       setCountdown(null);
       const blob = await takeRawPhoto();
-      const shot: CapturedPhoto = { url: URL.createObjectURL(blob), blob };
+      const previewBlob = shotsRef.current.length === 0 && canvasRef.current ? await canvasBlob(canvasRef.current) : null;
+      const shot: CapturedPhoto = { url: URL.createObjectURL(blob), blob, previewUrl: previewBlob ? URL.createObjectURL(previewBlob) : undefined };
       const next = [...shotsRef.current, shot]; shotsRef.current = next; setShots(next);
       if (next.length === 1) {
         setReviewingFirst(true);
@@ -298,13 +287,13 @@ export default function Home() {
   };
 
   const resetSession = () => {
-    shotsRef.current.forEach((shot) => URL.revokeObjectURL(shot.url)); shotsRef.current = []; setShots([]);
+    shotsRef.current.forEach((shot) => { URL.revokeObjectURL(shot.url); if (shot.previewUrl) URL.revokeObjectURL(shot.previewUrl); }); shotsRef.current = []; setShots([]);
     if (result) URL.revokeObjectURL(result.url);
     setResult(null); setReviewingFirst(false); setError("");
   };
 
   const retakeFirst = () => {
-    shotsRef.current.forEach((shot) => URL.revokeObjectURL(shot.url)); shotsRef.current = []; setShots([]); setReviewingFirst(false);
+    shotsRef.current.forEach((shot) => { URL.revokeObjectURL(shot.url); if (shot.previewUrl) URL.revokeObjectURL(shot.previewUrl); }); shotsRef.current = []; setShots([]); setReviewingFirst(false);
   };
 
   const extension = result?.blob.type.includes("mp4") ? "mp4" : "webm";
@@ -328,7 +317,7 @@ export default function Home() {
           {countdown !== null && <div className="countdown">{countdown}</div>}
           {isLive && countdown === null && !recording && <div className="shot-badge">第 {shots.length + 1} 張・共 2 張</div>}
           {recording && <div className="recording-badge"><span />錄製中<div className="record-track"><i style={{ width: `${recordProgress}%` }} /></div></div>}
-          {reviewingFirst && shots[0] && <><img src={shots[0].url} className="result-media" alt="第一張照片預覽" /><div className="review-label">第 1 張完成</div></>}
+          {reviewingFirst && shots[0] && <><img src={shots[0].previewUrl ?? shots[0].url} className="result-media" alt="第一張照片預覽" /><div className="review-label">第 1 張完成</div></>}
           {result?.kind === "photo" && <img src={result.url} className="result-media" alt="金安獎雙照片拍貼預覽" />}
           {result?.kind === "video" && <video src={result.url} className="result-media" autoPlay loop muted playsInline controls />}
         </div>
