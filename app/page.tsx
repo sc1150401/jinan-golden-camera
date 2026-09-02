@@ -10,6 +10,7 @@ const W = 1280;
 const H = 720;
 const OUTPUT_W = 1080;
 const OUTPUT_H = 1920;
+// The live crop and each saved panel intentionally share the same 16:9 geometry.
 
 function drawCover(ctx: CanvasRenderingContext2D, source: CanvasImageSource, sw: number, sh: number) {
   const scale = Math.max(W / sw, H / sh);
