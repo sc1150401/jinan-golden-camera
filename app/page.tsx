@@ -309,7 +309,7 @@ export default function Home() {
           <div><p className="eyebrow">2026 SAFETY GOLD AWARD</p><h1>金安無限・交通之光</h1></div>
           {isLive && <button className="icon-button" onClick={switchCamera} aria-label="切換前後鏡頭"><SwitchCamera size={23} /></button>}
         </header>
-        <div className="stage">
+        <div className={`stage ${result?.kind === "photo" ? "final-stage" : ""}`}>
           <canvas ref={canvasRef} width={W} height={H} />
           {!started && !result && <div className="welcome">
             <div className="welcome-mark"><Sparkles size={22} /></div><p>雙照片金光拍貼</p>
