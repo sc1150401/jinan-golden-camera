@@ -11,3 +11,10 @@
 - 3 秒倒數拍照
 - 10 秒動態錄影
 - 下載與手機分享
+
+## 本機啟動
+
+```bash
+npm run install:ci
+npm run dev
+```
