@@ -4,6 +4,8 @@ import { Camera, Download, RefreshCw, Sparkles, SwitchCamera, Video as VideoIcon
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Result = { url: string; blob: Blob; kind: "photo" | "video" } | null;
+type FrameVariant = 0 | 1;
+type PhotoItem = { url: string; blob: Blob; frame: FrameVariant };
 type GoldParticle = { x: number; y: number; r: number; drift: number; speed: number; phase: number; star: boolean };
 const W = 1080;
 const H = 1920;
@@ -24,6 +26,7 @@ export default function Home() {
   const chunksRef = useRef<Blob[]>([]);
   const particlesRef = useRef<GoldParticle[]>([]);
   const resultRef = useRef<Result>(null);
+  const photosRef = useRef<PhotoItem[]>([]);
 
   const [started, setStarted] = useState(false);
   const [facing, setFacing] = useState<"user" | "environment">("user");
@@ -32,6 +35,9 @@ export default function Home() {
   const [recording, setRecording] = useState(false);
   const [recordProgress, setRecordProgress] = useState(0);
   const [result, setResult] = useState<Result>(null);
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
+  const [activePhoto, setActivePhoto] = useState(0);
+  const [frameVariant, setFrameVariant] = useState<FrameVariant>(() => Math.random() < .5 ? 0 : 1);
 
   useEffect(() => { resultRef.current = result; }, [result]);
 
@@ -50,7 +56,8 @@ export default function Home() {
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       streamRef.current?.getTracks().forEach((track) => track.stop());
-      if (resultRef.current) URL.revokeObjectURL(resultRef.current.url);
+      photosRef.current.forEach((photo) => URL.revokeObjectURL(photo.url));
+      if (resultRef.current?.kind === "video") URL.revokeObjectURL(resultRef.current.url);
     };
   }, []);
 
@@ -80,8 +87,10 @@ export default function Home() {
     const brand = brandRef.current;
     if (brand?.complete && brand.naturalWidth) {
       ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = .92;
-      ctx.drawImage(brand, 744, 286, 510, 366, 430, 92, 570, 410); ctx.restore();
-      ctx.save(); ctx.globalAlpha = .8; ctx.beginPath(); ctx.rect(0, 0, 232, H); ctx.clip();
+      ctx.drawImage(brand, 744, 286, 510, 366, frameVariant === 0 ? 430 : 80, 92, 570, 410); ctx.restore();
+      ctx.save(); ctx.globalAlpha = .8; ctx.beginPath();
+      ctx.rect(frameVariant === 0 ? 0 : W - 232, 0, 232, H); ctx.clip();
+      if (frameVariant === 1) { ctx.translate(W, 0); ctx.scale(-1, 1); }
       ctx.drawImage(brand, 0, 135, 620, 836, -350, -24, 780, H + 48); ctx.restore();
       ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = .8;
       ctx.drawImage(brand, 275, 870, 470, 102, 264, 1762, 552, 120); ctx.restore();
@@ -117,7 +126,7 @@ export default function Home() {
     ctx.beginPath(); ctx.roundRect(58, 52, W - 116, H - 104, 50);
     ctx.strokeStyle = "rgba(222,191,121,.82)"; ctx.lineWidth = 2; ctx.stroke();
     animationRef.current = requestAnimationFrame(renderFrame);
-  }, [facing]);
+  }, [facing, frameVariant]);
 
   useEffect(() => {
     if (animationRef.current) cancelAnimationFrame(animationRef.current);
@@ -127,6 +136,7 @@ export default function Home() {
 
   const openCamera = async (mode = facing) => {
     setError("");
+    if (photosRef.current.length === 0) setFrameVariant(Math.random() < .5 ? 0 : 1);
     try {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -148,7 +158,14 @@ export default function Home() {
     for (let n = 3; n > 0; n -= 1) { setCountdown(n); await new Promise((resolve) => window.setTimeout(resolve, 700)); }
     setCountdown(null);
     canvasRef.current?.toBlob((blob) => {
-      if (blob) setResult({ url: URL.createObjectURL(blob), blob, kind: "photo" });
+      if (!blob) return;
+      const photo: PhotoItem = { url: URL.createObjectURL(blob), blob, frame: frameVariant };
+      const index = photosRef.current.length;
+      const next = [...photosRef.current, photo];
+      photosRef.current = next;
+      setPhotos(next);
+      setActivePhoto(index);
+      setResult({ url: photo.url, blob: photo.blob, kind: "photo" });
     }, "image/png");
   };
 
@@ -177,12 +194,31 @@ export default function Home() {
     } catch { setError("這個瀏覽器暫不支援錄影，可以使用拍照功能。"); }
   };
 
-  const retake = () => {
-    if (result) URL.revokeObjectURL(result.url);
+  const resetSession = () => {
+    photosRef.current.forEach((photo) => URL.revokeObjectURL(photo.url));
+    photosRef.current = [];
+    setPhotos([]);
+    if (result?.kind === "video") URL.revokeObjectURL(result.url);
+    setResult(null);
+    setActivePhoto(0);
+    setFrameVariant(Math.random() < .5 ? 0 : 1);
+  };
+
+  const prepareSecondPhoto = () => {
+    if (photos.length !== 1) return;
+    setFrameVariant(photos[0].frame === 0 ? 1 : 0);
     setResult(null);
   };
+
+  const selectPhoto = (index: number) => {
+    const photo = photos[index];
+    if (!photo) return;
+    setActivePhoto(index);
+    setResult({ url: photo.url, blob: photo.blob, kind: "photo" });
+  };
+
   const extension = result?.blob.type.includes("mp4") ? "mp4" : "webm";
-  const filename = result?.kind === "photo" ? "2026金安獎_交通之光.png" : `2026金安獎_交通之光.${extension}`;
+  const filename = result?.kind === "photo" ? `2026金安獎_交通之光_第${activePhoto + 1}張.png` : `2026金安獎_交通之光.${extension}`;
 
   return (
     <main className="camera-app">
@@ -199,6 +235,7 @@ export default function Home() {
             <button className="start-button" onClick={() => openCamera()}><Camera size={20} /> 開啟相機</button>
           </div>}
           {countdown !== null && <div className="countdown">{countdown}</div>}
+          {started && !result && countdown === null && !recording && <div className="shot-badge">第 {photos.length + 1} 張・框 {frameVariant === 0 ? "A" : "B"}</div>}
           {recording && <div className="recording-badge"><span />錄製中<div className="record-track"><i style={{ width: `${recordProgress}%` }} /></div></div>}
           {result?.kind === "photo" && <img src={result.url} className="result-media" alt="金安獎打卡照片預覽" />}
           {result?.kind === "video" && <video src={result.url} className="result-media" autoPlay loop muted playsInline controls />}
@@ -206,12 +243,22 @@ export default function Home() {
         {error && <p className="error-message" role="alert">{error}</p>}
         <footer className="controls">
           {started && !result && <>
-            <button className="secondary-action" onClick={recordVideo} disabled={recording}><VideoIcon size={20} />{recording ? "錄製中" : "錄製 10 秒"}</button>
+            {photos.length === 0
+              ? <button className="secondary-action" onClick={recordVideo} disabled={recording}><VideoIcon size={20} />{recording ? "錄製中" : "錄製 10 秒"}</button>
+              : <span className="shot-indicator">框 {frameVariant === 0 ? "A" : "B"}</span>}
             <button className="shutter" onClick={capturePhoto} disabled={recording} aria-label="拍照"><span><Camera size={26} /></span></button>
             <span className="control-spacer" aria-hidden="true" />
           </>}
-          {result && <>
-            <button className="secondary-action" onClick={retake}><RefreshCw size={19} />重拍</button>
+          {result?.kind === "photo" && <div className="photo-actions">
+            {photos.length === 2 && <div className="photo-tabs" aria-label="選擇照片">
+              {photos.map((_, index) => <button key={index} className={activePhoto === index ? "active" : ""} onClick={() => selectPhoto(index)}>第 {index + 1} 張</button>)}
+            </div>}
+            <button className="secondary-action" onClick={resetSession}><RefreshCw size={19} />重新拍攝</button>
+            <a className="secondary-action" href={result.url} download={filename}><Download size={19} />下載第 {activePhoto + 1} 張</a>
+            {photos.length === 1 && <button className="secondary-action next-shot" onClick={prepareSecondPhoto}><Camera size={19} />拍第 2 張</button>}
+          </div>}
+          {result?.kind === "video" && <>
+            <button className="secondary-action" onClick={resetSession}><RefreshCw size={19} />重拍</button>
             <a className="secondary-action" href={result.url} download={filename}><Download size={19} />下載</a>
           </>}
         </footer>
